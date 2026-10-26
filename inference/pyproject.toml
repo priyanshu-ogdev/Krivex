@@ -24,17 +24,17 @@ dev = [
 # Real backends (Planner Qwen3.5-9B, Sketch Cassowary Simplex, Polish Qwen-Image-2.1) — GPU required.
 # Unified all-Qwen architecture running in a single virtual environment.
 backends = [
-    "torch>=2.11.0",
+    "torch>=2.11.0,<2.12.0",
     "transformers>=5.17.0",
     "diffusers @ git+https://github.com/huggingface/diffusers.git@efe46a5b177af67c64b3666da8ddddac7ee12163",
     "bitsandbytes>=0.43",
     "pillow>=10.4",
-    "torchvision>=0.26.0",
+    "torchvision>=0.26.0,<0.27.0",
 ]
 # Optional vLLM 0.29 + PyTorch 2.11+ stack (Linux/CUDA container; excluded from Windows base to avoid wheel build failures)
 planner-vllm = [
     "vllm==0.29.0",
-    "torch>=2.11.0",
+    "torch>=2.11.0,<2.12.0",
     "transformers>=5.17.0",
 ]
 # Windows-compatible native GBNF Planner runtime

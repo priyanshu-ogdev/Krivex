@@ -46,8 +46,8 @@ source "${VENV_DIR}/bin/activate"
 pip install --upgrade pip wheel setuptools
 
 # 3. Install PyTorch with CUDA 12.4 support
-echo -e "\033[1;34mInstalling PyTorch with CUDA 12.4 support...\033[0m"
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+echo -e "\033[1;34mInstalling PyTorch 2.11 with CUDA 12.4 support...\033[0m"
+pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu124
 
 # 4. Install FAISS-GPU (Linux x86_64)
 echo -e "\033[1;34mInstalling FAISS-GPU...\033[0m"
@@ -58,7 +58,7 @@ pip install faiss-gpu || {
 
 # 5. Install vLLM (Linux/WSL2 CUDA native engine)
 echo -e "\033[1;34mInstalling vLLM...\033[0m"
-pip install "vllm>=0.18.0"
+pip install "vllm==0.29.0"
 
 # 6. Install Data-Forge package in editable mode with development dependencies
 echo -e "\033[1;34mInstalling data-forge in editable mode...\033[0m"

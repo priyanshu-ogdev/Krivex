@@ -66,6 +66,7 @@ if ($LASTEXITCODE -ne 0 -and $RequireGPU) {
 # 5. Install backend dependencies if requested
 if ($InstallBackends) {
     Write-Host "[+] Installing real model backend dependencies (torch, diffusers, transformers, bitsandbytes)..." -ForegroundColor Yellow
+    & $PythonBin -m pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu124
     & $PythonBin -m pip install -e "$RepoRoot\inference[backends]"
 } else {
     Write-Host "[i] Core dev dependencies installed. Pass -InstallBackends to install full GPU/Torch stack." -ForegroundColor DarkGray
