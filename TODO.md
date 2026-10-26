@@ -146,3 +146,38 @@ Write-Host "Tailscale IP: $(tailscale ip -4)" -ForegroundColor Cyan
     ```bash
     python scripts/training/audit_training_pipeline.py
     ```
+
+---
+
+- [ ] **Step 5: Persistent 24/7 Training Sessions via WSL tmux (Headless Disconnect Protection)**
+  - **Why**: Windows PowerShell has no native `tmux`. Disconnecting an interactive SSH session terminates foreground child processes. Because the ML training and vLLM stack runs inside **WSL2 Ubuntu**, we use native Linux `tmux` inside WSL:
+  - 1. Connect to WSL from your laptop:
+    ```powershell
+    ssh -t Student@100.126.34.68 "wsl -u priyanshu"
+    ```
+  - 2. Install tmux (if not already installed):
+    ```bash
+    sudo apt update && sudo apt install tmux -y
+    ```
+  - 3. Start a new persistent session:
+    ```bash
+    tmux new -s train
+    ```
+  - 4. Activate environment and launch training:
+    ```bash
+    conda activate krivex
+    ./scripts/training/train.sh polish-default training/configs/polish_qwen_image21_lora_a6000_max.yaml
+    ```
+  - 5. **Safely Detach**: Press `Ctrl + B`, then press `D`. You can now safely close your laptop or disconnect SSH; training continues running on the RTX 6000.
+  - 6. **Reattach Anytime**:
+    ```powershell
+    ssh -t Student@100.126.34.68 "wsl -u priyanshu tmux attach -t train"
+    ```
+
+  - *(Optional) Native Windows PowerShell Alternative (Detached Process)*:
+    If executing purely in Windows PowerShell without WSL, launch as an independent detached background process with redirected logging:
+    ```powershell
+    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -NoProfile -Command & { .\scripts\training\train_all.ps1 -Tier polish-default *> training.log }" -WindowStyle Hidden
+    # Monitor live output:
+    Get-Content -Path .\training.log -Wait
+    ```
