@@ -449,5 +449,10 @@ if ($All) {
 
 if ($Tier) {
     Execute-Tier $Tier $Config
+    if ($Log -and (Test-Path $Log)) {
+        $trainLogDir = Split-Path -Parent $Log
+        Copy-Item $Log (Join-Path $trainLogDir "latest.log") -Force -ErrorAction SilentlyContinue
+        Copy-Item $Log (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+    }
     exit 0
 }

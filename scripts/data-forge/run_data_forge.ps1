@@ -133,6 +133,22 @@ if ($ScriptArgs.Count -gt 1) {
     $Remaining = $ScriptArgs[1..($ScriptArgs.Count - 1)]
 }
 
+# Dedicated Logging Setup (Captures all stdout & stderr streams)
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$DfLogDir = Join-Path $RepoRoot "logs\data-forge"
+if (-not (Test-Path $DfLogDir)) { New-Item -ItemType Directory -Path $DfLogDir -Force | Out-Null }
+$DfLogFile = Join-Path $DfLogDir "${Action}_$Timestamp.log"
+
+function Invoke-WithLogging {
+    param([scriptblock]$CommandBlock)
+    Write-Host "[LOG] Capturing stdout and stderr to: $DfLogFile" -ForegroundColor DarkGray
+    & $CommandBlock 2>&1 | Tee-Object -FilePath $DfLogFile
+    $code = $LASTEXITCODE
+    Copy-Item $DfLogFile (Join-Path $DfLogDir "latest.log") -Force -ErrorAction SilentlyContinue
+    Copy-Item $DfLogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+    return $code
+}
+
 if ($Action -eq "setup") {
     & powershell -File (Join-Path $RepoRoot "scripts\data-forge\setup_env.ps1") @Remaining
     exit $LASTEXITCODE
@@ -140,7 +156,7 @@ if ($Action -eq "setup") {
 
 if ($Action -eq "audit" -or $Action -eq "registry") {
     Write-Host "[*] Auditing dataset & model registry preflight contracts..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\audit_registry.py") @Remaining
+    Invoke-WithLogging { & $Python (Join-Path $RepoRoot "scripts\data-forge\audit_registry.py") @Remaining }
     exit $LASTEXITCODE
 }
 
@@ -158,13 +174,13 @@ if ($Action -eq "verify-schemas") {
 
 if ($Action -eq "doctor") {
     Write-Host "[*] Running Data-Forge Pre-Flight Diagnostics..." -ForegroundColor Cyan
-    & $Python -m data_forge.cli doctor @Remaining
+    Invoke-WithLogging { & $Python -m data_forge.cli doctor @Remaining }
     exit $LASTEXITCODE
 }
 
 if ($Action -eq "run") {
     Write-Host "[*] Executing Data-Forge Pipeline Engine..." -ForegroundColor Cyan
-    & $Python -m data_forge.cli run @Remaining
+    Invoke-WithLogging { & $Python -m data_forge.cli run @Remaining }
     exit $LASTEXITCODE
 }
 
@@ -176,7 +192,7 @@ if ($Action -eq "manifest") {
 
 if ($Action -eq "sync-training") {
     Write-Host "[*] Synchronizing exported data into training-ready datasets..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\sync_to_training.py") @Remaining
+    Invoke-WithLogging { & $Python (Join-Path $RepoRoot "scripts\data-forge\sync_to_training.py") @Remaining }
     exit $LASTEXITCODE
 }
 
