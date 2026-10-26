@@ -149,35 +149,35 @@ Write-Host "Tailscale IP: $(tailscale ip -4)" -ForegroundColor Cyan
 
 ---
 
-- [ ] **Step 5: Persistent 24/7 Training Sessions via WSL tmux (Headless Disconnect Protection)**
-  - **Why**: Windows PowerShell has no native `tmux`. Disconnecting an interactive SSH session terminates foreground child processes. Because the ML training and vLLM stack runs inside **WSL2 Ubuntu**, we use native Linux `tmux` inside WSL:
-  - 1. Connect to WSL from your laptop:
+- [ ] **Step 5: 100% Native Windows Background Execution (nohup & tmux Alternative)**
+  - **Why**: Windows has no built-in `tmux`, and closing an SSH session kills foreground processes. We built a native PowerShell background manager (`scripts/run_detached.ps1`) that runs jobs completely decoupled from the SSH session. No Linux or WSL required.
+  
+  - **1. Launch Training in Background (Survives SSH Disconnects)**:
     ```powershell
-    ssh -t Student@100.126.34.68 "wsl -u priyanshu"
+    .\scriptsun_detached.ps1 -Start ".\scripts	raining	rain_all.ps1 -Tier polish-default" -Log "training.log"
     ```
-  - 2. Install tmux (if not already installed):
-    ```bash
-    sudo apt update && sudo apt install tmux -y
-    ```
-  - 3. Start a new persistent session:
-    ```bash
-    tmux new -s train
-    ```
-  - 4. Activate environment and launch training:
-    ```bash
-    conda activate krivex
-    ./scripts/training/train.sh polish-default training/configs/polish_qwen_image21_lora_a6000_max.yaml
-    ```
-  - 5. **Safely Detach**: Press `Ctrl + B`, then press `D`. You can now safely close your laptop or disconnect SSH; training continues running on the RTX 6000.
-  - 6. **Reattach Anytime**:
+    *(You can now safely exit SSH or close your laptop. Training continues running on the RTX 6000).*
+
+  - **2. Stream Live Progress ('tmux attach' Equivalent)**:
     ```powershell
-    ssh -t Student@100.126.34.68 "wsl -u priyanshu tmux attach -t train"
+    .\scriptsun_detached.ps1 -Follow
+    ```
+    *(Press `Ctrl + C` anytime to detach. The job continues running in the background).*
+
+  - **3. Check Job Health & Hardware Metrics**:
+    ```powershell
+    .\scriptsun_detached.ps1 -Status
     ```
 
-  - *(Optional) Native Windows PowerShell Alternative (Detached Process)*:
-    If executing purely in Windows PowerShell without WSL, launch as an independent detached background process with redirected logging:
+  - **4. Stop or Terminate Job**:
     ```powershell
-    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -NoProfile -Command & { .\scripts\training\train_all.ps1 -Tier polish-default *> training.log }" -WindowStyle Hidden
-    # Monitor live output:
-    Get-Content -Path .\training.log -Wait
+    .\scriptsun_detached.ps1 -Stop
+    ```
+
+  - *(Optional WSL tmux alternative)*:
+    If you ever decide to run inside WSL Ubuntu instead:
+    ```bash
+    tmux new -s train
+    ./scripts/training/train.sh polish-default
+    # Detach: Ctrl+B, D | Reattach: tmux attach -t train
     ```
