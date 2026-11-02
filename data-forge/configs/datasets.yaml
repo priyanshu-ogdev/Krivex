@@ -144,17 +144,17 @@ datasets:
       image_column: image
       sample_size: 10000
   doclaynet:
-    enabled: false
+    enabled: true
     display_name: DocLayNet (IBM Real-World Document Layouts)
     source_type: huggingface
-    repo_id: docling-project/DocLayNet
-    revision: 5656dbae459cf15b3a112d46bb6b5484cabcd2d2
+    repo_id: docling-project/DocLayNet-v1.1
+    revision: 5e89392376049f4d589ea339ed64468310ed5c3f
     category: editorial_document
     expected_record_count: 80863
     training_eligible: true
     synthetic: false
     synthetic_status: real
-    provenance_url: https://huggingface.co/datasets/docling-project/DocLayNet
+    provenance_url: https://huggingface.co/datasets/docling-project/DocLayNet-v1.1
     quality_tier: gold
     training_targets:
     - polish_qwen_image21
@@ -168,7 +168,7 @@ datasets:
     fetch_config:
       download_mode: hf_parquet_images
       file_patterns:
-      - '*.parquet'
+      - 'data/*.parquet'
       image_column: image
       sample_size: 80000
   abo_ecommerce:
@@ -199,30 +199,29 @@ datasets:
       image_column: pixel_values
       sample_size: 35000
   rico_semantic:
-    enabled: false
-    display_name: RICO Semantic Annotations (FiftyOne)
+    enabled: true
+    display_name: RICO Semantic Annotations (creative-graphic-design)
     source_type: huggingface
-    repo_id: Voxel51/rico
-    revision: a675f84fbb93e23e1a74681638951c8efe18c0eb
+    repo_id: creative-graphic-design/Rico
+    revision: c91e7d3c3d750ea3caae17573bd1250507966d6b
     category: mobile_ui
     expected_record_count: 66261
     training_eligible: true
     synthetic: false
     synthetic_status: real
-    provenance_url: https://huggingface.co/datasets/Voxel51/rico
+    provenance_url: https://huggingface.co/datasets/creative-graphic-design/Rico
     quality_tier: silver
     training_targets:
     - polish_qwen_image21
     license_url: https://creativecommons.org/licenses/by/4.0/
     license_status: verified
-    license_notes: CC BY 4.0 confirmed directly on the live FiftyOne dataset card.
+    license_notes: CC BY 4.0 confirmed directly on the live dataset card.
       Mobile UI layout and screenshot baseline.
     note: Mobile UI application screen baseline.
     fetch_config:
       download_mode: hf_parquet_images
-      file_patterns:
-      - '*.parquet'
-      image_column: image
+      config_subfolder: ui-screenshots-and-hierarchies-with-semantic-annotations
+      image_column: screenshot
       sample_size: 66000
   pickapic_v2:
     enabled: true
@@ -252,7 +251,7 @@ datasets:
       for Phase 2 continuous flow DPO alignment.'
     fetch_config:
       file_patterns:
-      - '*.parquet'
+      - 'data/*.parquet'
       download_mode: preference_pair
       image_a_column: jpg_0
       image_b_column: jpg_1

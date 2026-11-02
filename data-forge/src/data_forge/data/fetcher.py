@@ -643,7 +643,17 @@ class DatasetFetcher:
                         matching_parquet.append(rf)
             matching_parquet.sort()
             if matching_parquet:
-                for rf in matching_parquet[:1]:
+                sample_size = spec.fetch_config.get("sample_size")
+                if sample_size:
+                    # Estimate shards: ~1200 pairs per shard, plus headroom
+                    target_shards = max(1, min(len(matching_parquet), (sample_size // 1200) + 5))
+                    selected_shards = matching_parquet[:target_shards]
+                else:
+                    selected_shards = matching_parquet
+
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _download_shard(rf: str) -> None:
                     hf_hub_download(
                         repo_id=spec.repo_id,
                         repo_type="dataset",
@@ -652,6 +662,9 @@ class DatasetFetcher:
                         local_dir=str(target_dir),
                         token=self._hf_token,
                     )
+
+                with ThreadPoolExecutor(max_workers=8) as ex:
+                    list(ex.map(_download_shard, selected_shards))
             else:
                 import asyncio
                 await asyncio.to_thread(
