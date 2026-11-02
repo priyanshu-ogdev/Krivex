@@ -47,6 +47,30 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
+def _detect_encoding(path: Path) -> str:
+    try:
+        raw = path.read_bytes()[:16]
+        if raw.startswith(b"\xff\xfe"):
+            return "utf-16le"
+        elif raw.startswith(b"\xfe\xff"):
+            return "utf-16be"
+        elif raw.startswith(b"\xef\xbb\xbf"):
+            return "utf-8-sig"
+        if len(raw) > 4 and raw[1:2] == b"\x00" and raw[3:4] == b"\x00":
+            return "utf-16le"
+    except Exception:
+        pass
+    return "utf-8"
+
+
+def _read_log_text(path: Path) -> str:
+    try:
+        enc = _detect_encoding(path)
+        return path.read_text(encoding=enc, errors="replace")
+    except Exception:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+
 def _list_logs() -> int:
     print("=" * 64)
     print("   Krivex Execution Logs (logs/)")
@@ -182,7 +206,7 @@ def _status() -> int:
     if log_file and Path(log_file).is_file():
         print(f"\n--- Recent Log Output ({Path(log_file).name}) ---")
         try:
-            lines = Path(log_file).read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = _read_log_text(Path(log_file)).splitlines()
             tail = lines[-15:] if len(lines) > 15 else lines
             for l in tail:
                 print(f"  {l}")
@@ -228,7 +252,8 @@ def _follow(log_path: str | None = None) -> int:
     print("-" * 64)
 
     try:
-        with open(target, "r", encoding="utf-8", errors="replace") as f:
+        enc = _detect_encoding(target)
+        with open(target, "r", encoding=enc, errors="replace") as f:
             # Print initial contents
             content = f.read()
             sys.stdout.write(content)
