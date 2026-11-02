@@ -115,12 +115,33 @@ def _stop() -> int:
 
 def _is_running(pid: int) -> bool:
     if sys.platform == "win32":
-        res = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-            capture_output=True,
-            text=True,
-        )
-        return str(pid) in res.stdout
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = ctypes.windll.kernel32
+            # PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                kernel32.CloseHandle(handle)
+                # STILL_ACTIVE = 259
+                return exit_code.value == 259
+            kernel32.CloseHandle(handle)
+            return False
+        except Exception:
+            pass
+
+        # Fallback to PowerShell Get-Process
+        try:
+            res = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", f"if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"],
+                capture_output=True,
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
     else:
         try:
             os.kill(pid, 0)
