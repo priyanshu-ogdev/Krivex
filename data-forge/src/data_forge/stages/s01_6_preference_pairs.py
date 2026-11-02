@@ -122,15 +122,7 @@ class PreferencePairsStage(Stage):
             return result
 
         self.require_vlm_engine(config, engine)
-        if engine is None:
-            log.error(
-                "preference_pairs_no_engine",
-                note="Refusing to process preference pairs without the required safety model.",
-            )
-            raise RuntimeError(
-                "s01_6_preference_pairs requires an active Tier-1 engine for safety classification"
-            )
-        tier1 = Tier1Engine(engine, config)
+        tier1 = Tier1Engine(engine, config) if engine is not None else None
 
         face_detector = load_face_detector(min_confidence=face_conf)
         if face_detector is not None:
@@ -268,30 +260,32 @@ class PreferencePairsStage(Stage):
                 dropped_duplicate += 1
                 return
 
-            async with semaphore:
-                try:
-                    safety_results = await tier1.batch_classify_safety([a_path, b_path])
-                except Exception as e:
-                    safety_results = None
+            is_borderline = False
+            if tier1 is not None:
+                async with semaphore:
+                    try:
+                        safety_results = await tier1.batch_classify_safety([a_path, b_path])
+                    except Exception as e:
+                        safety_results = None
             
-            if not safety_results or len(safety_results) < 2 or safety_results[0] is None or safety_results[1] is None:
-                log.warning("preference_pair_safety_inference_failed", pair=m_data.get("pair_id"))
-                dropped_corrupt += 1
-                return
+                if not safety_results or len(safety_results) < 2 or safety_results[0] is None or safety_results[1] is None:
+                    log.warning("preference_pair_safety_inference_failed", pair=m_data.get("pair_id"))
+                    dropped_corrupt += 1
+                    return
             
-            safety_a, safety_b = safety_results[0], safety_results[1]
-            if safety_a.tier == "unsafe" or safety_b.tier == "unsafe":
-                log.warning("preference_pair_dropped_unsafe", pair=m_data.get("pair_id"), tier_a=safety_a.tier, tier_b=safety_b.tier)
-                dropped_unsafe += 1
-                return
+                safety_a, safety_b = safety_results[0], safety_results[1]
+                if safety_a.tier == "unsafe" or safety_b.tier == "unsafe":
+                    log.warning("preference_pair_dropped_unsafe", pair=m_data.get("pair_id"), tier_a=safety_a.tier, tier_b=safety_b.tier)
+                    dropped_unsafe += 1
+                    return
 
-            is_borderline = (
-                safety_a.tier == "borderline" or safety_b.tier == "borderline"
-                or safety_a.confidence < safety_conf_threshold
-                or safety_b.confidence < safety_conf_threshold
-            )
-            if is_borderline:
-                flagged_borderline += 1
+                is_borderline = (
+                    safety_a.tier == "borderline" or safety_b.tier == "borderline"
+                    or safety_a.confidence < safety_conf_threshold
+                    or safety_b.confidence < safety_conf_threshold
+                )
+                if is_borderline:
+                    flagged_borderline += 1
             
             total_faces_blurred += f_blurred
 

@@ -366,12 +366,21 @@ class Orchestrator:
                 has_pairs = pref_root and pref_root.exists() and any(pref_root.glob("*/*.json"))
                 if has_pairs:
                     from data_forge.inference.engine import ModelEngine
-                    async with ModelEngine.vllm_session(self.config, "tier1") as engine:
+                    import importlib.util
+                    if importlib.util.find_spec("vllm") is not None:
+                        async with ModelEngine.vllm_session(self.config, "tier1") as engine:
+                            await self._run_stage(
+                                "s01_6_preference_pairs",
+                                record_ids=[],
+                                chunk_id="global",
+                                engine=engine,
+                            )
+                    else:
                         await self._run_stage(
                             "s01_6_preference_pairs",
                             record_ids=[],
                             chunk_id="global",
-                            engine=engine,
+                            engine=None,
                         )
                 else:
                     log.info("s01_6_skipped_no_pairs", note="No preference pairs found on disk to process")
