@@ -262,12 +262,21 @@ Streams    : All Streams Captured (stdout, stderr, warnings, exceptions)
     # Generate a dedicated runner script to ensure clean execution and avoid argument escaping problems
     runner_script = DETACHED_LOGS_DIR / f"_runner_{timestamp}.bat"
     
+    # Normalize command for execution in Windows cmd/bat wrapper:
+    # If a .ps1 script or relative PowerShell command is given without 'powershell', wrap it
+    cmd_trimmed = command.strip()
+    cmd_lower = cmd_trimmed.lower()
+    exec_cmd = command
+    if not (cmd_lower.startswith("powershell") or cmd_lower.startswith("python") or cmd_lower.startswith("cmd")):
+        if ".ps1" in cmd_lower or cmd_trimmed.startswith(".\\") or cmd_trimmed.startswith("./"):
+            exec_cmd = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& {{ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command} }}"'
+
     # Bat runner sets code page to UTF-8, enters root, runs command redirecting all output, and appends completion banner
     bat_content = f"""@echo off
 chcp 65001 >nul
 cd /d "{ROOT}"
 echo [JOB_RUNNER] Process started at %date% %time% >> "{log_path}"
-{command} >> "{log_path}" 2>&1
+{exec_cmd} >> "{log_path}" 2>&1
 set EXIT_CODE=%ERRORLEVEL%
 echo. >> "{log_path}"
 echo ================================================================================ >> "{log_path}"
