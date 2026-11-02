@@ -17,7 +17,7 @@ param(
     [string[]]$ScriptArgs
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # Navigate to monorepo root (2 levels up from scripts/data-forge)
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -150,11 +150,19 @@ $DfLogFile = Join-Path $DfLogDir "${Action}_$Timestamp.log"
 function Invoke-WithLogging {
     param([scriptblock]$CommandBlock)
     Write-Host "[LOG] Capturing stdout and stderr to: $DfLogFile" -ForegroundColor DarkGray
-    & $CommandBlock 2>&1 | Tee-Object -FilePath $DfLogFile -Append
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $CommandBlock 2>&1 | Tee-Object -FilePath $DfLogFile -Append
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     $code = $LASTEXITCODE
     Copy-Item $DfLogFile (Join-Path $DfLogDir "latest.log") -Force -ErrorAction SilentlyContinue
     Copy-Item $DfLogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
-    return $code
+    if ($null -ne $code) {
+        $global:LASTEXITCODE = $code
+    }
 }
 
 if ($Action -eq "setup") {
