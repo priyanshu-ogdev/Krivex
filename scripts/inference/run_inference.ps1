@@ -34,6 +34,22 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $RepoRoot
 
+# 1. Auto-load .env into process environment if present
+$EnvFile = Join-Path $RepoRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $name = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim("'", '"')
+            if ($name -and -not [System.Environment]::GetEnvironmentVariable($name)) {
+                [System.Environment]::SetEnvironmentVariable($name, $val, "Process")
+            }
+        }
+    }
+}
+
 # Force UTF-8 on Windows Console
 if ([Console]::OutputEncoding.CodePage -ne 65001) {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -126,7 +142,31 @@ if ($WithFrontend) {
     Start-Sleep -Seconds 2
 }
 
-# 6. Launch FastAPI Service
+# 6. Resolve Python & Launch FastAPI Service with Dedicated Logging
+$Python = ""
+if ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
+    $Python = $env:PYTHON_EXECUTABLE
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\python.exe"
+} elseif ($env:CONDA_PREFIX -and (Test-Path (Join-Path $env:CONDA_PREFIX "python.exe"))) {
+    $Python = Join-Path $env:CONDA_PREFIX "python.exe"
+} else {
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) { $Python = $cmd.Source } else { $Python = "python" }
+}
+
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$InfLogDir = Join-Path $RepoRoot "logs\inference"
+if (-not (Test-Path $InfLogDir)) { New-Item -ItemType Directory -Path $InfLogDir -Force | Out-Null }
+$InfLogFile = Join-Path $InfLogDir "inference_$Timestamp.log"
+
+Write-Host "[LOG] Capturing stdout and stderr to: $InfLogFile" -ForegroundColor DarkGray
 Write-Host "[*] Starting Krivex Inference FastAPI Service on http://${BindHost}:${Port} ..." -ForegroundColor Green
-& python -m krivex_inference.orchestrator.service --host $BindHost --port $Port @RemainingArgs
-exit $LASTEXITCODE
+
+& $Python -m krivex_inference.orchestrator.service --host $BindHost --port $Port @RemainingArgs 2>&1 | Tee-Object -FilePath $InfLogFile -Append
+$code = $LASTEXITCODE
+Copy-Item $InfLogFile (Join-Path $InfLogDir "latest.log") -Force -ErrorAction SilentlyContinue
+Copy-Item $InfLogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+exit $code

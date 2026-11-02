@@ -15,6 +15,30 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 Set-Location $RepoRoot
 
+# Auto-load .env into process environment if present
+$EnvFile = Join-Path $RepoRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $name = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim("'", '"')
+            if ($name -and -not [System.Environment]::GetEnvironmentVariable($name)) {
+                [System.Environment]::SetEnvironmentVariable($name, $val, "Process")
+            }
+        }
+    }
+}
+
+# Dedicated Logging Setup
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$LogDir = Join-Path $RepoRoot "logs\training"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$LogFile = Join-Path $LogDir "diffusers_setup_$Timestamp.log"
+Start-Transcript -Path $LogFile -Append | Out-Null
+Write-Host "[LOG] Full stdout & stderr captured to: $LogFile" -ForegroundColor DarkGray
+
 if (-not $DiffusersDir) {
     $DiffusersDir = "$RepoRoot\third_party\diffusers"
 }
@@ -39,8 +63,28 @@ if ($head -ne $DiffusersRevision) {
     git -C "$DiffusersDir" checkout --detach "$DiffusersRevision"
 }
 
-$Pip = "$RepoRoot\.venv\Scripts\pip.exe"
-if (-not (Test-Path $Pip)) {
+$Python = ""
+if ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
+    $Python = $env:PYTHON_EXECUTABLE
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\python.exe"
+} elseif ($env:CONDA_PREFIX -and (Test-Path (Join-Path $env:CONDA_PREFIX "python.exe"))) {
+    $Python = Join-Path $env:CONDA_PREFIX "python.exe"
+} else {
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) { $Python = $cmd.Source } else { $Python = "python" }
+}
+
+$Pip = ""
+$pyDir = Split-Path -Parent $Python
+$candidatePip = Join-Path $pyDir "Scripts\pip.exe"
+if (Test-Path $candidatePip) {
+    $Pip = $candidatePip
+} elseif (Test-Path (Join-Path $pyDir "pip.exe")) {
+    $Pip = Join-Path $pyDir "pip.exe"
+} else {
     $Pip = "pip"
 }
 
@@ -60,7 +104,7 @@ if (Test-Path $zimageReq) {
 }
 
 Write-Host "Installing pinned training dependencies..." -ForegroundColor DarkGray
-& $Pip install "accelerate==1.10.1" "peft==0.17.1" "datasets==4.2.1" "pyarrow==21.0.0"
+& $Pip install "accelerate==1.10.1" "peft==0.17.1" "datasets>=3.0.0" "pyarrow==21.0.0"
 
 $trainerScript = "$DiffusersDir\examples\dreambooth\train_dreambooth_lora_qwenimage21_img2img.py"
 if (Test-Path $trainerScript) {
@@ -101,3 +145,8 @@ Write-Host "`n[SUCCESS] Diffusers training environment configured." -ForegroundC
 Write-Host "Official Qwen-Image-2.1 LoRA script located at:" -ForegroundColor DarkGray
 Write-Host "    $DiffusersDir\examples\dreambooth\train_dreambooth_lora_qwenimage21_img2img.py" -ForegroundColor DarkGray
 Write-Host "Run 'accelerate config' if you have not configured accelerate yet." -ForegroundColor Yellow
+try {
+    Stop-Transcript | Out-Null
+    Copy-Item $LogFile (Join-Path $LogDir "latest.log") -Force -ErrorAction SilentlyContinue
+    Copy-Item $LogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+} catch {}

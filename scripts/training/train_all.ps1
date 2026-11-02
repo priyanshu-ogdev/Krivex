@@ -59,6 +59,22 @@ $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 Set-Location $RepoRoot
 
+# Auto-load .env into process environment if present
+$EnvFile = Join-Path $RepoRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $name = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim("'", '"')
+            if ($name -and -not [System.Environment]::GetEnvironmentVariable($name)) {
+                [System.Environment]::SetEnvironmentVariable($name, $val, "Process")
+            }
+        }
+    }
+}
+
 # Configure PYTHONPATH with relative workspace sources
 $TrainingSrc = Join-Path $RepoRoot "training\src"
 $DataForgeSrc = Join-Path $RepoRoot "data-forge\src"
@@ -75,6 +91,8 @@ if ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
     $Python = $env:PYTHON_EXECUTABLE
 } elseif (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\python.exe"
 } elseif (Test-Path (Join-Path $RepoRoot ".venv-forge\Scripts\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv-forge\Scripts\python.exe"
 } elseif ($env:CONDA_PREFIX -and (Test-Path (Join-Path $env:CONDA_PREFIX "python.exe"))) {
@@ -117,8 +135,15 @@ if ($Help) {
 }
 
 if ($Audit -or $Tier -eq "audit") {
+    $auditLogDir = "$RepoRoot\logs\training"
+    if (-not (Test-Path $auditLogDir)) { New-Item -ItemType Directory -Path $auditLogDir -Force | Out-Null }
+    $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $AuditLog = "$auditLogDir\audit_$Timestamp.log"
     Write-Host "Running Krivex training pipeline audit (read-only)..." -ForegroundColor Cyan
-    & $Python "$RepoRoot\scripts\training\audit_training_pipeline.py"
+    Write-Host "[LOG] Capturing output to: $AuditLog" -ForegroundColor DarkGray
+    & $Python "$RepoRoot\scripts\training\audit_training_pipeline.py" 2>&1 | Tee-Object -FilePath $AuditLog
+    Copy-Item $AuditLog (Join-Path $auditLogDir "latest.log") -Force -ErrorAction SilentlyContinue
+    Copy-Item $AuditLog (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
     exit $LASTEXITCODE
 }
 
@@ -444,6 +469,11 @@ if ($All) {
     Write-Host "`n============================================================" -ForegroundColor Green
     Write-Host " ALL ACTIVE TRAINING TIERS COMPLETED SUCCESSFULLY!" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
+    if ($Log -and (Test-Path $Log)) {
+        $trainLogDir = Split-Path -Parent $Log
+        Copy-Item $Log (Join-Path $trainLogDir "latest.log") -Force -ErrorAction SilentlyContinue
+        Copy-Item $Log (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+    }
     exit 0
 }
 

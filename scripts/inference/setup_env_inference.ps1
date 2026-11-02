@@ -19,6 +19,30 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
 Set-Location $RepoRoot
 
+# Auto-load .env into process environment if present
+$EnvFile = Join-Path $RepoRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $name = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim("'", '"')
+            if ($name -and -not [System.Environment]::GetEnvironmentVariable($name)) {
+                [System.Environment]::SetEnvironmentVariable($name, $val, "Process")
+            }
+        }
+    }
+}
+
+# Dedicated Logging Setup
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$LogDir = Join-Path $RepoRoot "logs\inference"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$LogFile = Join-Path $LogDir "setup_inference_$Timestamp.log"
+Start-Transcript -Path $LogFile -Append | Out-Null
+Write-Host "[LOG] Full stdout & stderr captured to: $LogFile" -ForegroundColor DarkGray
+
 # Force UTF-8 on Windows Console
 if ([Console]::OutputEncoding.CodePage -ne 65001) {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -66,7 +90,7 @@ if ($LASTEXITCODE -ne 0 -and $RequireGPU) {
 # 5. Install backend dependencies if requested
 if ($InstallBackends) {
     Write-Host "[+] Installing real model backend dependencies (torch, diffusers, transformers, bitsandbytes)..." -ForegroundColor Yellow
-    & $PythonBin -m pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu124
+    & $PythonBin -m pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu126
     & $PythonBin -m pip install -e "$RepoRoot\inference[backends]"
 } else {
     Write-Host "[i] Core dev dependencies installed. Pass -InstallBackends to install full GPU/Torch stack." -ForegroundColor DarkGray
@@ -74,4 +98,9 @@ if ($InstallBackends) {
 
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "   Inference environment setup complete!                        " -ForegroundColor Green
+try {
+    Stop-Transcript | Out-Null
+    Copy-Item $LogFile (Join-Path $LogDir "latest.log") -Force -ErrorAction SilentlyContinue
+    Copy-Item $LogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+} catch {}
 Write-Host "================================================================" -ForegroundColor Green

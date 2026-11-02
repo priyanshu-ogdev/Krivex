@@ -21,6 +21,30 @@ $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyI
 $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 Set-Location $RepoRoot
 
+# Auto-load .env into process environment if present
+$EnvFile = Join-Path $RepoRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+            $parts = $line.Split("=", 2)
+            $name = $parts[0].Trim()
+            $val = $parts[1].Trim().Trim("'", '"')
+            if ($name -and -not [System.Environment]::GetEnvironmentVariable($name)) {
+                [System.Environment]::SetEnvironmentVariable($name, $val, "Process")
+            }
+        }
+    }
+}
+
+# Dedicated Logging Setup
+$Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$LogDir = Join-Path $RepoRoot "logs\data-forge"
+if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$LogFile = Join-Path $LogDir "setup_data_forge_$Timestamp.log"
+Start-Transcript -Path $LogFile -Append | Out-Null
+Write-Host "[LOG] Full stdout & stderr captured to: $LogFile" -ForegroundColor DarkGray
+
 # Force UTF-8 on Windows Console
 if ([Console]::OutputEncoding.CodePage -ne 65001) {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -89,7 +113,7 @@ Write-Host "[2/4] Ensuring pip, setuptools, and wheel are up to date..." -Foregr
 
 # 3. Install sealed PyTorch 2.11 with CUDA 12 support
 Write-Host "[3/4] Installing PyTorch 2.11 with CUDA 12.4 support & FAISS-CPU..." -ForegroundColor Cyan
-& $Pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu124
+& $Pip install "torch>=2.11.0,<2.12.0" "torchvision>=0.26.0,<0.27.0" --index-url https://download.pytorch.org/whl/cu126
 & $Pip install faiss-cpu
 
 # 4. Install Data-Forge in editable mode
@@ -102,3 +126,8 @@ Write-Host "================================================================" -F
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Audit data contracts:     .\scripts\data-forge\run_data_forge.ps1 audit" -ForegroundColor Yellow
 Write-Host "  2. Run pipeline dry-run:     .\scripts\data-forge\run_data_forge.ps1 run --dry-run" -ForegroundColor Yellow
+try {
+    Stop-Transcript | Out-Null
+    Copy-Item $LogFile (Join-Path $LogDir "latest.log") -Force -ErrorAction SilentlyContinue
+    Copy-Item $LogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
+} catch {}

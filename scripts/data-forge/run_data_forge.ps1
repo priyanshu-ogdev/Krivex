@@ -80,6 +80,8 @@ if ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
     $Python = $env:PYTHON_EXECUTABLE
 } elseif (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+} elseif (Test-Path (Join-Path $RepoRoot ".venv\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv\python.exe"
 } elseif (Test-Path (Join-Path $RepoRoot ".venv-forge\Scripts\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv-forge\Scripts\python.exe"
 } elseif ($env:CONDA_PREFIX -and (Test-Path (Join-Path $env:CONDA_PREFIX "python.exe"))) {
@@ -142,7 +144,7 @@ $DfLogFile = Join-Path $DfLogDir "${Action}_$Timestamp.log"
 function Invoke-WithLogging {
     param([scriptblock]$CommandBlock)
     Write-Host "[LOG] Capturing stdout and stderr to: $DfLogFile" -ForegroundColor DarkGray
-    & $CommandBlock 2>&1 | Tee-Object -FilePath $DfLogFile
+    & $CommandBlock 2>&1 | Tee-Object -FilePath $DfLogFile -Append
     $code = $LASTEXITCODE
     Copy-Item $DfLogFile (Join-Path $DfLogDir "latest.log") -Force -ErrorAction SilentlyContinue
     Copy-Item $DfLogFile (Join-Path (Join-Path $RepoRoot "logs") "latest.log") -Force -ErrorAction SilentlyContinue
@@ -150,7 +152,7 @@ function Invoke-WithLogging {
 }
 
 if ($Action -eq "setup") {
-    & powershell -File (Join-Path $RepoRoot "scripts\data-forge\setup_env.ps1") @Remaining
+    Invoke-WithLogging { & powershell -File (Join-Path $RepoRoot "scripts\data-forge\setup_env.ps1") @Remaining }
     exit $LASTEXITCODE
 }
 
@@ -162,13 +164,13 @@ if ($Action -eq "audit" -or $Action -eq "registry") {
 
 if ($Action -eq "pin-revisions") {
     Write-Host "[*] Resolving unpinned revisions to immutable commit SHAs..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\pin_revisions.py") @Remaining
+    Invoke-WithLogging { & $Python (Join-Path $RepoRoot "scripts\data-forge\pin_revisions.py") @Remaining }
     exit $LASTEXITCODE
 }
 
 if ($Action -eq "verify-schemas") {
     Write-Host "[*] Verifying JSON schemas against Pydantic definitions..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\verify_schemas.py") @Remaining
+    Invoke-WithLogging { & $Python (Join-Path $RepoRoot "scripts\data-forge\verify_schemas.py") @Remaining }
     exit $LASTEXITCODE
 }
 
@@ -186,7 +188,7 @@ if ($Action -eq "run") {
 
 if ($Action -eq "manifest") {
     Write-Host "[*] Querying Data-Forge Manifest SQLite Database..." -ForegroundColor Cyan
-    & $Python -m data_forge.cli manifest @Remaining
+    Invoke-WithLogging { & $Python -m data_forge.cli manifest @Remaining }
     exit $LASTEXITCODE
 }
 
@@ -202,31 +204,33 @@ if ($Action -eq "all") {
         $DryRunArg = @("--dry-run")
     }
 
-    Write-Host "[Step 1/4] Running doctor diagnostics..." -ForegroundColor Cyan
-    & $Python -m data_forge.cli doctor
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[!] Doctor identified warnings; continuing..." -ForegroundColor Yellow
+    Invoke-WithLogging {
+        Write-Host "[Step 1/4] Running doctor diagnostics..." -ForegroundColor Cyan
+        & $Python -m data_forge.cli doctor
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[!] Doctor identified warnings; continuing..." -ForegroundColor Yellow
+        }
+
+        Write-Host "[Step 2/4] Running forensic registry audit..." -ForegroundColor Cyan
+        & $Python (Join-Path $RepoRoot "scripts\data-forge\audit_registry.py")
+
+        Write-Host "[Step 3/4] Executing pipeline engine..." -ForegroundColor Cyan
+        & $Python -m data_forge.cli run @DryRunArg
+
+        Write-Host "[Step 4/4] Synchronizing datasets to training layer..." -ForegroundColor Cyan
+        & $Python (Join-Path $RepoRoot "scripts\data-forge\sync_to_training.py")
+
+        Write-Host "================================================================" -ForegroundColor Green
+        Write-Host "   Complete Data-Forge Pipeline & Training Bridge Finished!     " -ForegroundColor Green
+        Write-Host "================================================================" -ForegroundColor Green
+        Write-Host "Ready for model training:" -ForegroundColor Yellow
+        Write-Host "   .\scripts\training\train_all.ps1" -ForegroundColor Yellow
+        Write-Host "   ./scripts/training/train.sh polish-default" -ForegroundColor Yellow
+        Write-Host "   ./scripts/training/train.sh polish-dpo" -ForegroundColor Yellow
     }
-
-    Write-Host "[Step 2/4] Running forensic registry audit..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\audit_registry.py")
-
-    Write-Host "[Step 3/4] Executing pipeline engine..." -ForegroundColor Cyan
-    & $Python -m data_forge.cli run @DryRunArg
-
-    Write-Host "[Step 4/4] Synchronizing datasets to training layer..." -ForegroundColor Cyan
-    & $Python (Join-Path $RepoRoot "scripts\data-forge\sync_to_training.py")
-
-    Write-Host "================================================================" -ForegroundColor Green
-    Write-Host "   Complete Data-Forge Pipeline & Training Bridge Finished!     " -ForegroundColor Green
-    Write-Host "================================================================" -ForegroundColor Green
-    Write-Host "Ready for model training:" -ForegroundColor Yellow
-    Write-Host "   .\scripts\training\train_all.ps1" -ForegroundColor Yellow
-    Write-Host "   ./scripts/training/train.sh polish-default" -ForegroundColor Yellow
-    Write-Host "   ./scripts/training/train.sh polish-dpo" -ForegroundColor Yellow
     exit 0
 }
 
 # Standard data-forge CLI pass-through
-& $Python -m data_forge.cli @ScriptArgs
+Invoke-WithLogging { & $Python -m data_forge.cli @ScriptArgs }
 exit $LASTEXITCODE
