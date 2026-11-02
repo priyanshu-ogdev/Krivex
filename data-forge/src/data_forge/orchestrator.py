@@ -377,17 +377,20 @@ class Orchestrator:
                     log.info("s01_6_skipped_no_pairs", note="No preference pairs found on disk to process")
 
         if self._should_run("s01_7_preference_pair_pii", stages_filter):
-            pref_root = self.config.resolved_paths.get("preference_pairs")
-            has_pairs = pref_root and pref_root.exists() and any(pref_root.glob("*/*.json"))
-            if has_pairs:
-                from data_forge.inference.engine import ModelEngine
-                async with ModelEngine.vllm_session(self.config, "ocr") as engine:
-                    await self._run_stage(
-                        "s01_7_preference_pair_pii",
-                        record_ids=[],
-                        chunk_id="global",
-                        engine=engine,
-                    )
+            if dry_run:
+                log.info("stage_dry_run", stage="s01_7_preference_pair_pii")
+            else:
+                pref_root = self.config.resolved_paths.get("preference_pairs")
+                has_pairs = pref_root and pref_root.exists() and any(pref_root.glob("*/*.json"))
+                if has_pairs:
+                    from data_forge.inference.engine import ModelEngine
+                    async with ModelEngine.vllm_session(self.config, "ocr") as engine:
+                        await self._run_stage(
+                            "s01_7_preference_pair_pii",
+                            record_ids=[],
+                            chunk_id="global",
+                            engine=engine,
+                        )
 
         if dry_run:
             log.info("dry_run_pipeline_completed", stages_checked=stages_filter or "all")
