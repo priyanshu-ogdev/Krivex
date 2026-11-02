@@ -77,10 +77,21 @@ def blur_faces(image: Any, face_detector: Any, blur_kernel_size: int = 99) -> tu
         h_img, w_img = img_array.shape[:2]
         for detection in results.detections:
             bbox = detection.bounding_box
-            x1 = max(0, int(bbox.left))
-            y1 = max(0, int(bbox.top))
-            x2 = min(w_img, int(bbox.right))
-            y2 = min(h_img, int(bbox.bottom))
+            origin_x = getattr(bbox, "origin_x", getattr(bbox, "left", 0))
+            origin_y = getattr(bbox, "origin_y", getattr(bbox, "top", 0))
+            width = getattr(bbox, "width", None)
+            if width is None:
+                right = getattr(bbox, "right", origin_x)
+                width = right - origin_x
+            height = getattr(bbox, "height", None)
+            if height is None:
+                bottom = getattr(bbox, "bottom", origin_y)
+                height = bottom - origin_y
+
+            x1 = max(0, int(origin_x))
+            y1 = max(0, int(origin_y))
+            x2 = min(w_img, int(origin_x + width))
+            y2 = min(h_img, int(origin_y + height))
             if x2 <= x1 or y2 <= y1:
                 continue
 
