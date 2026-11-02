@@ -267,7 +267,7 @@ def run(
             "12": "s12_model_data_export",
         }
         stages_filter = []
-        for s in stages.split(","):
+        for s in re.split(r"[\s,]+", stages.strip()):
             s = s.strip()
             if not s:
                 continue
