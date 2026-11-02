@@ -74,16 +74,22 @@ $TrainingSrc = Join-Path $RepoRoot "training\src"
 $InferenceSrc = Join-Path $RepoRoot "inference\src"
 $env:PYTHONPATH = "$DataForgeSrc;$TrainingSrc;$InferenceSrc;$RepoRoot;" + $env:PYTHONPATH
 
-# 5. Resolve Python executable prioritizing workspace-relative virtualenvs and active environment
+# 5. Resolve Python executable prioritizing dedicated Data-Forge environment, virtualenvs and active environment
 $Python = ""
-if ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
+if ($env:DATA_FORGE_PYTHON -and (Test-Path $env:DATA_FORGE_PYTHON)) {
+    $Python = $env:DATA_FORGE_PYTHON
+} elseif (Test-Path "C:\Users\student\miniconda3\envs\krivex-data\python.exe") {
+    $Python = "C:\Users\student\miniconda3\envs\krivex-data\python.exe"
+} elseif ($env:USERPROFILE -and (Test-Path (Join-Path $env:USERPROFILE "miniconda3\envs\krivex-data\python.exe"))) {
+    $Python = Join-Path $env:USERPROFILE "miniconda3\envs\krivex-data\python.exe"
+} elseif (Test-Path (Join-Path $RepoRoot ".venv-forge\Scripts\python.exe")) {
+    $Python = Join-Path $RepoRoot ".venv-forge\Scripts\python.exe"
+} elseif ($env:PYTHON_EXECUTABLE -and (Test-Path $env:PYTHON_EXECUTABLE)) {
     $Python = $env:PYTHON_EXECUTABLE
 } elseif (Test-Path (Join-Path $RepoRoot ".venv\Scripts\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 } elseif (Test-Path (Join-Path $RepoRoot ".venv\python.exe")) {
     $Python = Join-Path $RepoRoot ".venv\python.exe"
-} elseif (Test-Path (Join-Path $RepoRoot ".venv-forge\Scripts\python.exe")) {
-    $Python = Join-Path $RepoRoot ".venv-forge\Scripts\python.exe"
 } elseif ($env:CONDA_PREFIX -and (Test-Path (Join-Path $env:CONDA_PREFIX "python.exe"))) {
     $Python = Join-Path $env:CONDA_PREFIX "python.exe"
 } else {

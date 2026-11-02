@@ -11,7 +11,7 @@
 [CmdletBinding()]
 param(
     [switch]$UseConda,
-    [string]$CondaEnvName = "krivex",
+    [string]$CondaEnvName = "krivex-data",
     [switch]$Help
 )
 
