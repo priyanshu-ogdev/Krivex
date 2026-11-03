@@ -106,6 +106,7 @@ temp/
 vllm_outputs/
 preflight_results/
 eval_results/
+eval_scrubbed_faces/
 
 # Generated reports and receipts (source-controlled fixtures remain safe)
 data-forge/audit_reports/
@@ -119,6 +120,7 @@ reports/generated/
 *.safetensors.index.json
 *receipt*.json
 eval_results/
+eval_scrubbed_faces/
 
 # OS, IDE, and local runner files
 .DS_Store

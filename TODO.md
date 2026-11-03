@@ -1,5 +1,83 @@
 # Project Deployment & Setup TODO
 
+## Active Operations: Data-Forge Completion & Training Launch Runbook
+
+---
+
+### Step A: Monitor Real-Time Data-Forge Progress
+Connect via SSH to the server and execute the real-time verifier:
+\\powershell
+ssh Student@100.126.34.68
+# Password: WarriorEX1*
+
+cd C:\Users\student\Krivex
+.\check_progress.ps1
+\- **What this tells you**:
+  - Process State (\ACTIVE\ with PID or \COMPLETED\).
+  - Total records processed past Stage 2 (dedup / quality / PII / safety).
+  - Exact breakdown of manifest statuses.
+  - Stage 10 (VLM Audit Gate) and Stage 12 (Model Data Export) completion status.
+  - Current GPU VRAM allocation.
+
+To follow the live log stream in real time:
+\\powershell
+Get-Content .\data_krivex\logs\pipeline.jsonl -Wait -Tail 20
+\
+---
+
+### Step B: How to Know Stage 12 is Completely Done
+Stage 12 is finished when **both** of the following conditions are met:
+1. \.\check_progress.ps1\ displays:
+   \   [OK] Stage 12 (Model Data Export)  : COMPLETE (... pair records exported)
+   STAGE 12 IS FULLY COMPLETE! DATASET IS READY FOR TRAINING!
+   \2. The export manifest exists and is non-empty:
+   \\powershell
+   Test-Path .\data_krivex\model_data\polish_qwen_image21\manifest.jsonl
+   # Returns: True
+   \3. The detached job log shows exit code 0:
+   \\powershell
+   Get-Content .\logs\detached\latest.log -Tail 10
+   # Returns: [JOB_RUNNER] Completed ... with Exit Code 0
+   \
+---
+
+### Step C: Flush & Verify GPU VRAM
+Before starting training, the 48 GB RTX 6000 Ada GPU must be completely free (0 MB allocated), so the 45 GB DoRA profile has full headroom:
+\\powershell
+nvidia-smi
+\- If any old VLM server or Python process is still holding VRAM:
+  \\powershell
+  Get-Process -Name python, cmd -ErrorAction SilentlyContinue | Where-Object { \.Id -ne \9860 }
+  # Stop lingering processes if necessary:
+  # Stop-Process -Id <PID> -Force
+  \
+---
+
+### Step D: Launch Visual Polish Tier (Qwen-Image-2.1 DoRA) Training
+Activate the verified training environment and start training:
+
+#### 1. Activate Conda Environment
+\\powershell
+conda activate krivex
+\*(Python 3.11.18, PyTorch 2.11.0+cu126, Diffusers efe46a5, Accelerate 1.15.0, PEFT 0.21.2)*
+
+#### 2. Launch Production Training (Immortal Detached Mode - Recommended)
+*Runs in the background completely decoupled from your SSH session. You can close your laptop.*
+\\powershell
+.\run_training.ps1
+\*(By default uses the Enterprise Max profile: batch 16, accum 2 = effective 32, rank 128 DoRA, fp32 AdamW, peak 45.0 GB VRAM).*
+
+To stream live training loss & steps:
+\\powershell
+Get-Content .\logs\detached\latest.log -Wait -Tail 30
+\
+#### 3. (Alternative) Launch in Foreground Interactive Mode
+*If you want to view progress bars and loss directly in the active terminal window:*
+\\powershell
+.\run_training.ps1 -Interactive
+\
+---
+
 ## RTX 6000 Headless Remote Server Setup
 
 - [ ] **Step 1: Execute Master Setup Script on Server**
@@ -154,24 +232,28 @@ Write-Host "Tailscale IP: $(tailscale ip -4)" -ForegroundColor Cyan
   
   - **1. Launch Training in Background (Survives SSH Disconnects)**:
     ```powershell
-    .\scriptsun_detached.ps1 -Start ".\scripts	raining	rain_all.ps1 -Tier polish-default" -Log "training.log"
+    .\scripts
+un_detached.ps1 -Start ".\scripts	raining	rain_all.ps1 -Tier polish-default" -Log "training.log"
     ```
     *(You can now safely exit SSH or close your laptop. Training continues running on the RTX 6000).*
 
   - **2. Stream Live Progress ('tmux attach' Equivalent)**:
     ```powershell
-    .\scriptsun_detached.ps1 -Follow
+    .\scripts
+un_detached.ps1 -Follow
     ```
     *(Press `Ctrl + C` anytime to detach. The job continues running in the background).*
 
   - **3. Check Job Health & Hardware Metrics**:
     ```powershell
-    .\scriptsun_detached.ps1 -Status
+    .\scripts
+un_detached.ps1 -Status
     ```
 
   - **4. Stop or Terminate Job**:
     ```powershell
-    .\scriptsun_detached.ps1 -Stop
+    .\scripts
+un_detached.ps1 -Stop
     ```
 
   - *(Optional WSL tmux alternative)*:
