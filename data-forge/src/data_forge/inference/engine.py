@@ -55,7 +55,7 @@ class ModelEngine:
 
     async def start_vllm(self, config: PipelineConfig, model_key: str) -> None:
         """Start vLLM server subprocess for a given model key."""
-        if self._current_model == model_key and self._vllm_process:
+        if self._current_model == model_key and (self._vllm_process or self._client):
             log.info("vllm_already_loaded", model=model_key)
             return
 
@@ -67,42 +67,73 @@ class ModelEngine:
             raise ValueError(f"Model key '{model_key}' not found in models.yaml")
 
         server_cfg = config.vllm_server
+        base_url = f"http://{server_cfg.host}:{server_cfg.port}"
+
+        # If a server is ALREADY running at base_url (e.g. native VLM server), attach immediately!
+        try:
+            async with httpx.AsyncClient() as chk:
+                r = await chk.get(f"{base_url}/health", timeout=2.0)
+                if r.status_code == 200:
+                    log.info("vllm_already_running_attaching", base_url=base_url, model=model_key)
+                    self._client = httpx.AsyncClient(
+                        base_url=f"{base_url}/v1",
+                        headers={"Authorization": f"Bearer {server_cfg.api_key}"},
+                        timeout=httpx.Timeout(300.0, connect=10.0),
+                        limits=httpx.Limits(max_connections=1024, max_keepalive_connections=512, keepalive_expiry=120.0),
+                    )
+                    self._current_model = model_key
+                    return
+        except Exception:
+            pass
 
         import importlib.util
         if importlib.util.find_spec("vllm") is None:
-            raise VLLMServerError("vLLM is not installed. Please install the GPU extra.")
+            if sys.platform == "win32":
+                native_srv = Path("C:/Users/student/Krivex/scripts/native_vlm_server.py")
+                if not native_srv.is_file():
+                    native_srv = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "native_vlm_server.py"
+                cmd = [
+                    sys.executable,
+                    str(native_srv),
+                    "--model", model_spec.model_id,
+                    "--port", str(server_cfg.port),
+                    "--fast",
+                ]
+            else:
+                raise VLLMServerError("vLLM is not installed. Please install the GPU extra.")
+        else:
 
-        gpu_mem = str(model_spec.gpu_memory_utilization or 0.95)
-        cmd = [
-            sys.executable, "-m", "vllm.entrypoints.openai.api_server",
-            "--model", model_spec.model_id,
-            "--host", server_cfg.host,
-            "--port", str(server_cfg.port),
-            "--api-key", server_cfg.api_key,
-            "--max-model-len", str(model_spec.max_model_len),
-            "--gpu-memory-utilization", gpu_mem,
-            "--dtype", model_spec.dtype,
-            "--enable-chunked-prefill",  # SOTA: prevents OOM during long multimodal vision prefill
-            "--enable-prefix-caching",   # SOTA: caches system prompts & vision prefixes across pipeline stages
-            "--max-num-seqs", str(server_cfg.max_num_seqs),
-            "--enforce-eager",
-            "--no-enable-log-requests",  # SOTA: removes stdout/disk IO bottleneck
-            "--disable-uvicorn-access-log",  # SOTA: eliminates high-concurrency access log spam
-            "--uvicorn-log-level", "warning",  # SOTA: suppresses noisy uvicorn INFO polling logs
-            "--performance-mode", "throughput",  # SOTA: batch-oriented scheduling for maximum throughput
-        ]
+            gpu_mem = str(model_spec.gpu_memory_utilization or 0.95)
+            cmd = [
+                sys.executable, "-m", "vllm.entrypoints.openai.api_server",
+                "--model", model_spec.model_id,
+                "--host", server_cfg.host,
+                "--port", str(server_cfg.port),
+                "--api-key", server_cfg.api_key,
+                "--max-model-len", str(model_spec.max_model_len),
+                "--gpu-memory-utilization", gpu_mem,
+                "--dtype", model_spec.dtype,
+                "--enable-chunked-prefill",  # SOTA: prevents OOM during long multimodal vision prefill
+                "--enable-prefix-caching",   # SOTA: caches system prompts & vision prefixes across pipeline stages
+                "--max-num-seqs", str(server_cfg.max_num_seqs),
+                "--enforce-eager",
+                "--no-enable-log-requests",  # SOTA: removes stdout/disk IO bottleneck
+                "--disable-uvicorn-access-log",  # SOTA: eliminates high-concurrency access log spam
+                "--uvicorn-log-level", "warning",  # SOTA: suppresses noisy uvicorn INFO polling logs
+                "--performance-mode", "throughput",  # SOTA: batch-oriented scheduling for maximum throughput
+            ]
 
-        if "vision" in getattr(model_spec, "capabilities", []):
-            cmd.extend(["--limit-mm-per-prompt", json.dumps({"image": 1})])
+            if "vision" in getattr(model_spec, "capabilities", []):
+                cmd.extend(["--limit-mm-per-prompt", json.dumps({"image": 1})])
 
-        if model_spec.quantization:
-            cmd.extend(["--quantization", model_spec.quantization])
-        if model_spec.trust_remote_code:
-            cmd.append("--trust-remote-code")
-        if model_spec.reasoning_parser:
-            cmd.extend(["--reasoning-parser", model_spec.reasoning_parser])
-        if model_spec.revision != "main":
-            cmd.extend(["--revision", model_spec.revision])
+            if model_spec.quantization:
+                cmd.extend(["--quantization", model_spec.quantization])
+            if model_spec.trust_remote_code:
+                cmd.append("--trust-remote-code")
+            if model_spec.reasoning_parser:
+                cmd.extend(["--reasoning-parser", model_spec.reasoning_parser])
+            if model_spec.revision != "main":
+                cmd.extend(["--revision", model_spec.revision])
 
         log.info(
             "vllm_starting",
@@ -169,6 +200,7 @@ class ModelEngine:
             if self._vllm_log_handle is not None:
                 self._vllm_log_handle.close()
                 self._vllm_log_handle = None
+            self._current_model = None
             return
 
         log.info("vllm_stopping", model=self._current_model)

@@ -1,0 +1,10 @@
+import sqlite3
+conn = sqlite3.connect('C:/Users/student/Krivex/data_krivex/manifests/manifest.db')
+cur = conn.cursor()
+cur.execute('SELECT status, count(*) FROM records GROUP BY status')
+print('Before reset:', cur.fetchall())
+cur.execute('UPDATE records SET status = "deduped" WHERE status NOT IN ("excluded_duplicate")')
+conn.commit()
+cur.execute('SELECT status, count(*) FROM records GROUP BY status')
+print('After reset:', cur.fetchall())
+conn.close()
